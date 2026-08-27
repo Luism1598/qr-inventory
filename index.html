@@ -16,7 +16,7 @@ button,input,textarea{font:inherit}button{min-height:46px;border:0;border-radius
 .primary{background:var(--blue);color:white}.secondary{background:#eef3fb;color:var(--dark)}
 input,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:6px}
 label{display:block;font-size:14px;font-weight:700;margin:12px 0}
-#video{width:100%;min-height:260px;border-radius:14px;background:#111;overflow:hidden}
+#video{width:100%;min-height:320px;border-radius:14px;background:#111;overflow:hidden;position:relative} #video video{width:100%!important;height:auto!important;min-height:320px!important;display:block!important;object-fit:cover!important;border-radius:14px} #video__scan_region{min-height:320px!important}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.value{font-weight:700;overflow-wrap:anywhere}
 .muted{color:var(--muted);font-size:13px}.hidden{display:none}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:9px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -144,21 +144,19 @@ function stopCamera(){
 }
 async function startCamera(){
   if(!window.Html5Qrcode){
-    $('cameraMsg').textContent='Scanner library is still loading. Please try again.';
+    $('cameraMsg').textContent='Scanner is still loading. Please wait a moment and try again.';
     return;
   }
   try{
     if(scannerRunning)return;
-    $('cameraMsg').textContent='Requesting camera permission...';
+    $('cameraMsg').textContent='Starting camera...';
+    $('video').classList.remove('hidden');
     scanner=new Html5Qrcode("video");
     const config={
       fps:10,
-      qrbox:(w,h)=>{
-        const side=Math.floor(Math.min(w,h)*0.72);
-        return {width:Math.max(180,side),height:Math.max(180,side)};
-      },
+      qrbox:{width:250,height:250},
       aspectRatio:1.0,
-      formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE]
+      disableFlip:false
     };
     await scanner.start(
       {facingMode:"environment"},
@@ -178,12 +176,13 @@ async function startCamera(){
     scannerRunning=true;
     $('start').classList.add('hidden');
     $('stop').classList.remove('hidden');
-    $('cameraMsg').textContent='Point the rear camera at the QR code.';
+    $('cameraMsg').textContent='Camera is on. Point the rear camera at your QR code.';
   }catch(e){
     scannerRunning=false;
+    $('video').classList.add('hidden');
     $('start').classList.remove('hidden');
     $('stop').classList.add('hidden');
-    $('cameraMsg').textContent='Camera could not start. Allow camera access in Safari and make sure you are using the HTTPS GitHub Pages address.';
+    $('cameraMsg').textContent='Camera could not start. Make sure Safari/Chrome has camera permission and that you opened the HTTPS app address.';
     console.error(e);
   }
 }
