@@ -90,41 +90,38 @@ function parseQR(raw){
   const text=String(raw||'').trim();
   if(!text) throw Error('No QR data found.');
 
-  // The actual labels can arrive from iPhone as one continuous string,
-  // without visible # separators. Parse by the field identifiers themselves.
-  const clean=text.replace(/[\x00-\x1F\x7F]/g,'#').replace(/#+/g,'#');
+  // Your labels use field identifiers embedded in the QR data.
+  // Parse the values directly from those identifiers rather than relying
+  // on the separator character being preserved by the iPhone scanner.
   const out={raw:text};
 
-  // Internal ID is the leading value before the first P field.
-  const firstP=clean.search(/(?:^|#)P(?!1P)/);
-  if(firstP>=0){
-    const prefix=clean.slice(0,firstP).replace(/^#+/,'').trim();
-    if(prefix) out.internalId=prefix;
-  } else {
-    const m=clean.match(/^(\d{4,})/);
-    if(m) out.internalId=m[1];
-  }
+  // Internal ID: digits at the very beginning, before the P field.
+  const idMatch=text.match(/^(\d{4,})/);
+  if(idMatch) out.internalId=idMatch[1];
 
-  // Parse the primary fields by their identifiers, even when separators are missing.
-  const pMatch=clean.match(/(?:^|#)P(?!1P)(.*?)(?=Q|9D|1T|1V|1P|$)/);
-  const qMatch=clean.match(/Q(.*?)(?=9D|1T|1V|1P|$)/);
-  const dMatch=clean.match(/9D(.*?)(?=1T|1V|1P|$)/);
-  const tMatch=clean.match(/1T(.*?)(?=1V|1P|$)/);
-  const vMatch=clean.match(/1V(.*?)(?=1P|$)/);
-  const p1Match=clean.match(/1P(.*)$/);
+  // Part number: value after P, stopping at Q.
+  const pMatch=text.match(/P(.*?)(?=Q|9D|1T|1V|1P|$)/);
+  if(pMatch) out.partNumber=pMatch[1].trim();
 
-  if(pMatch) out.partNumber=pMatch[1].replace(/^#+/,'').trim();
-  if(qMatch) out.quantity=qMatch[1].replace(/^#+/,'').trim();
-  if(dMatch) out.dateCode=dMatch[1].replace(/^#+/,'').trim();
-  if(tMatch) out.lot=tMatch[1].replace(/^#+/,'').trim();
-  if(vMatch) out.manufacturer=vMatch[1].replace(/^#+/,'').trim();
-  if(p1Match) out.partNumber2=p1Match[1].replace(/^#+/,'').trim();
+  // Quantity: digits immediately after Q. This avoids separators/other
+  // characters causing the "quantity is not numeric" error.
+  const qMatch=text.match(/Q([0-9]+(?:\.[0-9]+)?)/);
+  if(qMatch) out.quantity=qMatch[1];
 
-  // If the primary P field was not detected, use the 1P field.
+  const dMatch=text.match(/9D(.*?)(?=1T|1V|1P|$)/);
+  if(dMatch) out.dateCode=dMatch[1].trim();
+
+  const tMatch=text.match(/1T(.*?)(?=1V|1P|$)/);
+  if(tMatch) out.lot=tMatch[1].trim();
+
+  const vMatch=text.match(/1V(.*?)(?=1P|$)/);
+  if(vMatch) out.manufacturer=vMatch[1].trim();
+
+  const p1Match=text.match(/1P(.*)$/);
+  if(p1Match) out.partNumber2=p1Match[1].trim();
+
+  // Prefer the P field; fall back to 1P if needed.
   out.partNumber=out.partNumber||out.partNumber2||'';
-
-  if(out.quantity!==undefined && out.quantity!=='' && !/^\d+(?:\.\d+)?$/.test(out.quantity))
-    throw Error('Quantity field Q is not numeric.');
 
   if(!out.internalId && !out.partNumber)
     throw Error('QR format not recognized.');
