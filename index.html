@@ -74,6 +74,9 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
 
 <section class="card">
   <h2>Inventory History</h2>
+  <label>Search by Part Number or PO
+    <input id="inventorySearch" placeholder="Enter part number or PO number" autocomplete="off">
+  </label>
   <div class="actions">
     <button id="export" class="primary">📊 Export Excel</button>
     <button id="clear" class="secondary">Clear History</button>
@@ -81,7 +84,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
   <p id="count" class="muted">0 scans</p>
   <div id="empty" class="muted">No scans saved yet.</div>
   <div id="history" class="scroll hidden">
-    <table><thead><tr><th>Date/Time</th><th>Part</th><th>Qty</th><th>Location</th><th>Manufacturer</th></tr></thead>
+    <table><thead><tr><th>Date/Time</th><th>PO</th><th>Part</th><th>Qty</th><th>Location</th><th>Actions</th></tr></thead>
     <tbody id="
 <div id="poPage" class="tab">
 <section class="card">
@@ -100,7 +103,27 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
 rows"></tbody></table>
   </div>
 </section>
-</div></main>
+</div>
+<section id="editCard" class="card hidden">
+  <h2>Edit Inventory Record</h2>
+  <input id="editId" type="hidden">
+  <div class="grid">
+    <label>PO<input id="editPO"></label>
+    <label>Part Number<input id="editPart"></label>
+    <label>Quantity<input id="editQty" type="number" min="0" step="1"></label>
+    <label>Date Code<input id="editDate"></label>
+    <label>Lot<input id="editLot"></label>
+    <label>Manufacturer<input id="editManufacturer"></label>
+  </div>
+  <label>Location<input id="editLocation"></label>
+  <label>Notes<input id="editNotes"></label>
+  <div class="actions">
+    <button id="updateRecord" class="primary" type="button">Save Changes</button>
+    <button id="cancelEdit" class="secondary" type="button">Cancel</button>
+  </div>
+  <p id="editMsg" class="muted"></p>
+</section>
+</main>
 
 <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 <script>
@@ -162,15 +185,31 @@ function show(d){
   $('location').focus();
 }
 function render(){
-  $('count').textContent=`${scans.length} scan${scans.length===1?'':'s'}`;
+  const query=(($('inventorySearch')?.value)||'').trim().toLowerCase();
+  const filtered=scans.filter(r=>{
+    if(!query)return true;
+    return String(r.partNumber||'').toLowerCase().includes(query) ||
+           String(r.poNumber||'').toLowerCase().includes(query);
+  });
+  $('count').textContent=query?`${filtered.length} of ${scans.length} scans`:`${scans.length} scans`;
   $('empty').classList.toggle('hidden',scans.length>0);
-  $('history').classList.toggle('hidden',scans.length===0);
+  $('history').classList.toggle('hidden',filtered.length===0);
   $('rows').innerHTML='';
-  [...scans].reverse().forEach(s=>{
+  if($('noMatches')) $('noMatches').classList.toggle('hidden',filtered.length>0 || scans.length===0);
+
+  [...filtered].reverse().forEach(r=>{
     const tr=document.createElement('tr');
-    [s.time,s.partNumber||'—',s.quantity??'—',s.location||'—',s.manufacturer||'—'].forEach(v=>{
+    [r.time,r.poNumber||'—',r.partNumber||'—',r.quantity??'—',r.location||'—'].forEach(v=>{
       const td=document.createElement('td');td.textContent=v;tr.appendChild(td);
     });
+    const td=document.createElement('td');
+    const edit=document.createElement('button');edit.type='button';edit.className='secondary';edit.textContent='✏️ Edit';
+    edit.style.cssText='min-height:36px;padding:7px 10px';
+    edit.onclick=()=>openEdit(r.scanId);
+    const del=document.createElement('button');del.type='button';del.className='secondary';del.textContent='🗑️';
+    del.style.cssText='min-height:36px;padding:7px 10px;margin-left:5px';
+    del.onclick=()=>deleteRecord(r.scanId);
+    td.append(edit,del);tr.appendChild(td);
     $('rows').appendChild(tr);
   });
 }
@@ -334,6 +373,31 @@ $('testBtn')?.addEventListener('click',()=>{
 $('raw').value='';
 render();
 
+
+function openEdit(id){
+  const r=scans.find(x=>String(x.scanId)===String(id)); if(!r)return;
+  $('editId').value=r.scanId;$('editPO').value=r.poNumber||'';$('editPart').value=r.partNumber||'';
+  $('editQty').value=r.quantity??'';$('editDate').value=r.dateCode||'';$('editLot').value=r.lot||'';
+  $('editManufacturer').value=r.manufacturer||'';$('editLocation').value=r.location||'';$('editNotes').value=r.notes||'';
+  $('editMsg').textContent='';$('editCard').classList.remove('hidden');$('editCard').scrollIntoView({behavior:'smooth'});
+}
+function deleteRecord(id){
+  if(!confirm('Delete this inventory record?'))return;
+  scans=scans.filter(x=>String(x.scanId)!==String(id));saveState();
+}
+$('inventorySearch').addEventListener('input',render);
+$('cancelEdit').onclick=()=>$('editCard').classList.add('hidden');
+$('updateRecord').onclick=()=>{
+  const r=scans.find(x=>String(x.scanId)===String($('editId').value));if(!r)return;
+  const part=$('editPart').value.trim(),loc=$('editLocation').value.trim();
+  if(!part){$('editMsg').textContent='Part Number is required.';return;}
+  if(!loc){$('editMsg').textContent='Location is required.';return;}
+  r.poNumber=$('editPO').value.trim();r.partNumber=part;
+  r.quantity=$('editQty').value===''?'':Number($('editQty').value);
+  r.dateCode=$('editDate').value.trim();r.lot=$('editLot').value.trim();
+  r.manufacturer=$('editManufacturer').value.trim();r.location=loc;r.notes=$('editNotes').value.trim();
+  r.editedAt=new Date().toLocaleString();saveState();$('editCard').classList.add('hidden');
+};
 // Purchase Order
 function renderPO(){
   $('poNumber').value=currentPO;
