@@ -35,7 +35,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
     <button id="start" class="primary">📷 Start Camera</button>
     <button id="stop" class="secondary hidden">Stop Camera</button>
   </div>
-  <p id="cameraMsg" class="muted"></p>
+  <p id="cameraMsg" class="muted"></p><p id="decodedHint" class="muted"></p>
   <label>QR value (manual fallback)
     <textarea id="raw" rows="3" placeholder="K108575#P1021-0150#Q305#9D2329#1T2329#1VYAGEO#1P1021-0150"></textarea>
   </label>
@@ -184,7 +184,7 @@ async function startCamera(){
     scanner=new Html5Qrcode("video");
     const config={
       fps:10,
-      qrbox:{width:250,height:250},
+      qrbox:{width:300,height:300},
       aspectRatio:1.0,
       disableFlip:false
     };
@@ -193,12 +193,25 @@ async function startCamera(){
       config,
       decodedText=>{
         $('raw').value=decodedText;
+        $('decodedHint').textContent='Decoded QR text captured. If fields are blank, send me a screenshot of this raw value.';
+        $('cameraMsg').textContent='QR detected. Reading data...';
         try{
-          show(parseQR(decodedText));
-          $('cameraMsg').textContent='QR code scanned. Review the fields below and enter the location.';
+          const parsed=parseQR(decodedText);
+          show(parsed);
+          $('cameraMsg').textContent='QR code read successfully. Review the fields below and enter the location.';
           stopCamera();
         }catch(e){
-          $('cameraMsg').textContent=e.message;
+          // Do not discard a valid camera decode just because parsing needs adjustment.
+          $('details').classList.remove('hidden');
+          $('internalId').textContent='—';
+          $('partNumber').textContent='—';
+          $('qty').textContent='—';
+          $('dateCode').textContent='—';
+          $('lot').textContent='—';
+          $('manufacturer').textContent='—';
+          $('cameraMsg').textContent='QR was read, but its field format needs to be matched. The raw value is shown below.';
+          $('location').focus();
+          stopCamera();
         }
       },
       ()=>{}
