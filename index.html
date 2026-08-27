@@ -10,11 +10,15 @@
 :root{--blue:#0b5cff;--dark:#102033;--muted:#64748b;--line:#dbe3ee;--bg:#f5f7fb;--card:#fff}
 *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--dark)}
 header{background:var(--blue);color:#fff;padding:18px 16px;font-size:21px;font-weight:700}
+nav{display:flex;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+nav button{flex:1;border-radius:0;background:#fff;color:var(--muted);border-bottom:3px solid transparent}
+nav button.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab{display:none}.tab.active{display:block}
 main{max-width:760px;margin:auto;padding:16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
 button,input,textarea{font:inherit}button{min-height:46px;border:0;border-radius:10px;padding:10px 15px;font-weight:700;cursor:pointer}
 .primary{background:var(--blue);color:white}.secondary{background:#eef3fb;color:var(--dark)}
-input,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:6px}
+input,textarea,select{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:6px;background:#fff}
 label{display:block;font-size:14px;font-weight:700;margin:12px 0}
 #cameraBox{width:100%;margin:12px 0;border-radius:14px;overflow:hidden;background:#111;min-height:340px} #video{width:100%;min-height:340px;background:#111;overflow:hidden} #video video{width:100%!important;height:340px!important;display:block!important;object-fit:cover!important;background:#111!important} #video__scan_region{min-height:340px!important}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.value{font-weight:700;overflow-wrap:anywhere}
@@ -26,8 +30,12 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
 </head>
 <body>
 <header>QR INVENTORY</header>
+<nav>
+  <button id="inventoryTab" class="active" type="button">Inventory</button>
+  <button id="poTab" type="button">Purchase Orders</button>
+</nav>
 <main>
-<section class="card">
+<div id="inventoryPage" class="tab active"><section class="card">
   <h2>Scan Inventory</h2>
   <p class="muted">Point your phone camera at a QR code. The app extracts your part information automatically.</p>
   <div id="cameraBox" class="hidden"><div id="video"></div></div>
@@ -74,10 +82,25 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
   <div id="empty" class="muted">No scans saved yet.</div>
   <div id="history" class="scroll hidden">
     <table><thead><tr><th>Date/Time</th><th>Part</th><th>Qty</th><th>Location</th><th>Manufacturer</th></tr></thead>
-    <tbody id="rows"></tbody></table>
+    <tbody id="
+<div id="poPage" class="tab">
+<section class="card">
+  <h2>Purchase Order</h2>
+  <p class="muted">Set the PO number used for inventory scans.</p>
+  <label>PO Number
+    <input id="poNumber" placeholder="Example: PO-10025" autocomplete="off">
+  </label>
+  <div class="actions">
+    <button id="savePO" class="primary" type="button">Save PO Number</button>
+    <button id="clearPO" class="secondary" type="button">Clear</button>
+  </div>
+  <p id="poMsg" class="muted"></p>
+</section>
+</div>
+rows"></tbody></table>
   </div>
 </section>
-</main>
+</div></main>
 
 <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 <script>
@@ -247,7 +270,7 @@ $('save').onclick=()=>{
     scanId:String(Date.now()),qrCode:current.raw,internalId:current.internalId||'',
     partNumber:current.partNumber||'',quantity:current.quantity!==undefined?Number(current.quantity):'',
     dateCode:current.dateCode||'',lot:current.lot||'',manufacturer:current.manufacturer||'',
-    location:loc,notes:$('notes').value.trim(),time:new Date().toLocaleString()
+    location:loc,poNumber:currentPO,notes:$('notes').value.trim(),time:new Date().toLocaleString()
   });
   saveState();current=null;$('details').classList.add('hidden');$('raw').value='';$('location').value='';$('notes').value='';
   $('cameraMsg').textContent='Inventory saved. Ready for the next item.';
@@ -257,10 +280,10 @@ $('clear').onclick=()=>{
 };
 $('export').onclick=()=>{
   if(!scans.length){alert('No scans to export.');return;}
-  const header=['Scan ID','QR Code','Internal ID','Part Number','Quantity','Date Code','Lot','Manufacturer','Location','Date/Time','Notes'];
+  const header=['Scan ID','QR Code','Internal ID','Part Number','Quantity','Date Code','Lot','Manufacturer','Location','PO Number','Date/Time','Notes'];
   const esc=v=>'"'+String(v??'').replaceAll('"','""')+'"';
   const csv=[header.map(esc).join(',')].concat(
-    scans.map(s=>[s.scanId,s.qrCode,s.internalId,s.partNumber,s.quantity,s.dateCode,s.lot,s.manufacturer,s.location,s.time,s.notes].map(esc).join(','))
+    scans.map(s=>[s.scanId,s.qrCode,s.internalId,s.partNumber,s.quantity,s.dateCode,s.lot,s.manufacturer,s.location,s.poNumber||'',s.time,s.notes].map(esc).join(','))
   ).join('\r\n');
   const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='QR_Inventory_Scans.csv';a.click();URL.revokeObjectURL(a.href);
@@ -271,4 +294,35 @@ $('testBtn')?.addEventListener('click',()=>{
 });
 $('raw').value='';
 render();
+
+// Purchase Order
+let currentPO=localStorage.getItem('qrInventoryCurrentPO')||'';
+
+function renderPO(){
+  $('poNumber').value=currentPO;
+  $('poMsg').textContent=currentPO?'Current PO: '+currentPO:'';
+}
+$('inventoryTab').onclick=()=>{
+  $('inventoryTab').classList.add('active');$('poTab').classList.remove('active');
+  $('inventoryPage').classList.add('active');$('poPage').classList.remove('active');
+};
+$('poTab').onclick=()=>{
+  $('poTab').classList.add('active');$('inventoryTab').classList.remove('active');
+  $('poPage').classList.add('active');$('inventoryPage').classList.remove('active');
+  renderPO();
+};
+$('savePO').onclick=()=>{
+  const po=$('poNumber').value.trim();
+  if(!po){$('poMsg').textContent='Enter a PO Number.';return;}
+  currentPO=po;
+  localStorage.setItem('qrInventoryCurrentPO',currentPO);
+  $('poMsg').textContent='PO Number saved: '+currentPO;
+};
+$('clearPO').onclick=()=>{
+  currentPO='';
+  localStorage.removeItem('qrInventoryCurrentPO');
+  $('poNumber').value='';
+  $('poMsg').textContent='PO Number cleared.';
+};
+renderPO();
 </script>
