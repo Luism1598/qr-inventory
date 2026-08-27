@@ -263,44 +263,57 @@ $('next').onclick=()=>{
   stopCamera();current=null;$('details').classList.add('hidden');$('raw').value='';$('location').value='';$('notes').value='';
   setTimeout(startCamera,200);
 };
-$('save').onclick=()=>{
+$('save').addEventListener('click',function(){
+  const msg=$('cameraMsg');
+
   if(!current){
-    alert('Please scan a QR code first.');
+    msg.textContent='Nothing to save yet. Scan a QR code first.';
+    msg.style.color='crimson';
     return;
   }
+
   const loc=$('location').value.trim();
   if(!loc){
-    alert('Please enter a Location before saving.');
+    msg.textContent='Please enter a Location before saving.';
+    msg.style.color='crimson';
     $('location').focus();
     return;
   }
 
   const record={
     scanId:String(Date.now()),
-    qrCode:current.raw||'',
-    internalId:current.internalId||'',
-    partNumber:current.partNumber||'',
-    quantity:(current.quantity!==undefined && current.quantity!=='')?Number(current.quantity):'',
-    dateCode:current.dateCode||'',
-    lot:current.lot||'',
-    manufacturer:current.manufacturer||'',
+    qrCode:String(current.raw||''),
+    internalId:String(current.internalId||''),
+    partNumber:String(current.partNumber||''),
+    quantity:(current.quantity!==undefined && current.quantity!=='') ? Number(current.quantity) : '',
+    dateCode:String(current.dateCode||''),
+    lot:String(current.lot||''),
+    manufacturer:String(current.manufacturer||''),
     location:loc,
-    poNumber:(typeof currentPO!=='undefined'?currentPO:''),
-    notes:$('notes').value.trim(),
+    poNumber:String(currentPO||''),
+    notes:String($('notes').value||''),
     time:new Date().toLocaleString()
   };
 
-  scans.push(record);
-  saveState();
+  try{
+    scans.push(record);
+    localStorage.setItem('qrInventoryScans',JSON.stringify(scans));
+    render();
 
-  current=null;
-  $('details').classList.add('hidden');
-  $('raw').value='';
-  $('location').value='';
-  $('notes').value='';
-  $('cameraMsg').textContent='Inventory saved successfully. Ready for the next item.';
-  window.scrollTo({top:0,behavior:'smooth'});
-};
+    current=null;
+    $('details').classList.add('hidden');
+    $('raw').value='';
+    $('location').value='';
+    $('notes').value='';
+
+    msg.style.color='green';
+    msg.textContent='✓ Inventory saved successfully. Ready for the next item.';
+  }catch(err){
+    console.error(err);
+    msg.style.color='crimson';
+    msg.textContent='Could not save this scan on the device.';
+  }
+});
 $('clear').onclick=()=>{
   if(confirm('Delete all saved scans on this device?')){scans=[];saveState();}
 };
