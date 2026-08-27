@@ -1,0 +1,9 @@
+{
+  "name":"QR Inventory",
+  "short_name":"QR Inventory",
+  "start_url":"./index.html",
+  "display":"standalone",
+  "background_color":"#f5f7fb",
+  "theme_color":"#0b5cff",
+  "icons":[]
+}
