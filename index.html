@@ -90,41 +90,39 @@ function parseQR(raw){
   const text=String(raw||'').trim();
   if(!text) throw Error('No QR data found.');
 
-  // Your labels use field identifiers embedded in the QR data.
-  // Parse the values directly from those identifiers rather than relying
-  // on the separator character being preserved by the iPhone scanner.
+  // The iPhone scanner is returning the GS1 group-separator character
+  // (which can display as a small square in the text box). We do not rely
+  // on that separator; instead, we locate the field identifiers directly.
   const out={raw:text};
 
-  // Internal ID: digits at the very beginning, before the P field.
-  const idMatch=text.match(/^(\d{4,})/);
-  if(idMatch) out.internalId=idMatch[1];
-
-  // Part number: value after P, stopping at Q.
-  const pMatch=text.match(/P(.*?)(?=Q|9D|1T|1V|1P|$)/);
-  if(pMatch) out.partNumber=pMatch[1].trim();
-
-  // Quantity: digits immediately after Q. This avoids separators/other
-  // characters causing the "quantity is not numeric" error.
-  const qMatch=text.match(/Q([0-9]+(?:\.[0-9]+)?)/);
-  if(qMatch) out.quantity=qMatch[1];
-
+  // Your real label format:
+  // K110106 [separator] P1044-LP2985-3.3V [separator] Q263
+  // [separator] 9D2324 [separator] 1T3115196EM3 [separator] 1V
+  // [separator] 1P...
+  const kMatch=text.match(/K(.*?)(?=P|Q|9D|1T|1V|1P|$)/);
+  const pMatch=text.match(/(?:^|[^1])P(.*?)(?=Q|9D|1T|1V|1P|$)/);
+  const qMatch=text.match(/Q([0-9]+(?:\.[0-9]+)?)(?=[^0-9]|$)/);
   const dMatch=text.match(/9D(.*?)(?=1T|1V|1P|$)/);
-  if(dMatch) out.dateCode=dMatch[1].trim();
-
   const tMatch=text.match(/1T(.*?)(?=1V|1P|$)/);
-  if(tMatch) out.lot=tMatch[1].trim();
-
   const vMatch=text.match(/1V(.*?)(?=1P|$)/);
-  if(vMatch) out.manufacturer=vMatch[1].trim();
-
   const p1Match=text.match(/1P(.*)$/);
+
+  if(kMatch) out.internalId=kMatch[1].trim();
+  if(pMatch) out.partNumber=pMatch[1].trim();
+  if(qMatch) out.quantity=qMatch[1].trim();
+  if(dMatch) out.dateCode=dMatch[1].trim();
+  if(tMatch) out.lot=tMatch[1].trim();
+  if(vMatch) out.manufacturer=vMatch[1].trim();
   if(p1Match) out.partNumber2=p1Match[1].trim();
 
-  // Prefer the P field; fall back to 1P if needed.
   out.partNumber=out.partNumber||out.partNumber2||'';
 
+  // Quantity is optional for parsing; if present, it must be numeric.
+  if(out.quantity!==undefined && !/^\d+(?:\.\d+)?$/.test(out.quantity))
+    throw Error('Could not read the quantity after Q. Please rescan the QR.');
+
   if(!out.internalId && !out.partNumber)
-    throw Error('QR format not recognized.');
+    throw Error('QR format not recognized. Please rescan the label.');
 
   return out;
 }
@@ -227,8 +225,13 @@ async function startCamera(){
   }
 }
 $('read').onclick=()=>{
-  try{show(parseQR($('raw').value));$('cameraMsg').textContent='QR data recognized.'}
-  catch(e){$('cameraMsg').textContent=e.message}
+  try{
+    const parsed=parseQR($('raw').value);
+    show(parsed);
+    $('cameraMsg').textContent='QR data recognized. Enter the location and save.';
+  }catch(e){
+    $('cameraMsg').textContent=e.message;
+  }
 };
 $('start').onclick=startCamera;
 $('stop').onclick=stopCamera;
@@ -266,6 +269,6 @@ $('testBtn')?.addEventListener('click',()=>{
   $('raw').value=TEST;
   try{show(parseQR(TEST));$('cameraMsg').textContent='Test QR recognized.'}catch(e){$('cameraMsg').textContent=e.message}
 });
-$('raw').value=TEST;
+$('raw').value='';
 render();
 </script>
