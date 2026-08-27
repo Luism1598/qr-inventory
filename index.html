@@ -67,7 +67,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
     <input id="notes" placeholder="Optional">
   </label>
   <div class="actions">
-    <button id="save" class="primary">💾 Save Inventory</button>
+    <button id="save" class="primary" type="button">💾 Save Inventory</button>
     <button id="next" class="secondary">📷 Scan Next</button>
   </div>
 </section>
@@ -107,6 +107,7 @@ rows"></tbody></table>
 const TEST='K108575#P1021-0150#Q305#9D2329#1T2329#1VYAGEO#1P1021-0150';
 let scans=JSON.parse(localStorage.getItem('qrInventoryScans')||'[]');
 let current=null,scanner=null,scannerRunning=false;
+let currentPO=localStorage.getItem('qrInventoryCurrentPO')||'';
 
 const $=id=>document.getElementById(id);
 function parseQR(raw){
@@ -263,17 +264,42 @@ $('next').onclick=()=>{
   setTimeout(startCamera,200);
 };
 $('save').onclick=()=>{
-  if(!current)return;
+  if(!current){
+    alert('Please scan a QR code first.');
+    return;
+  }
   const loc=$('location').value.trim();
-  if(!loc){alert('Please enter a location.');$('location').focus();return;}
-  scans.push({
-    scanId:String(Date.now()),qrCode:current.raw,internalId:current.internalId||'',
-    partNumber:current.partNumber||'',quantity:current.quantity!==undefined?Number(current.quantity):'',
-    dateCode:current.dateCode||'',lot:current.lot||'',manufacturer:current.manufacturer||'',
-    location:loc,poNumber:currentPO,notes:$('notes').value.trim(),time:new Date().toLocaleString()
-  });
-  saveState();current=null;$('details').classList.add('hidden');$('raw').value='';$('location').value='';$('notes').value='';
-  $('cameraMsg').textContent='Inventory saved. Ready for the next item.';
+  if(!loc){
+    alert('Please enter a Location before saving.');
+    $('location').focus();
+    return;
+  }
+
+  const record={
+    scanId:String(Date.now()),
+    qrCode:current.raw||'',
+    internalId:current.internalId||'',
+    partNumber:current.partNumber||'',
+    quantity:(current.quantity!==undefined && current.quantity!=='')?Number(current.quantity):'',
+    dateCode:current.dateCode||'',
+    lot:current.lot||'',
+    manufacturer:current.manufacturer||'',
+    location:loc,
+    poNumber:(typeof currentPO!=='undefined'?currentPO:''),
+    notes:$('notes').value.trim(),
+    time:new Date().toLocaleString()
+  };
+
+  scans.push(record);
+  saveState();
+
+  current=null;
+  $('details').classList.add('hidden');
+  $('raw').value='';
+  $('location').value='';
+  $('notes').value='';
+  $('cameraMsg').textContent='Inventory saved successfully. Ready for the next item.';
+  window.scrollTo({top:0,behavior:'smooth'});
 };
 $('clear').onclick=()=>{
   if(confirm('Delete all saved scans on this device?')){scans=[];saveState();}
@@ -296,8 +322,6 @@ $('raw').value='';
 render();
 
 // Purchase Order
-let currentPO=localStorage.getItem('qrInventoryCurrentPO')||'';
-
 function renderPO(){
   $('poNumber').value=currentPO;
   $('poMsg').textContent=currentPO?'Current PO: '+currentPO:'';
