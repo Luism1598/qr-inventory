@@ -90,24 +90,40 @@ function parseQR(raw){
   const text=String(raw||'').trim();
   if(!text) throw Error('No QR data found.');
 
-  // QR readers may return #, ASCII GS (group separator), or a mixture.
-  const parts=text.split(/[#\x1D]+/).map(x=>x.trim()).filter(Boolean);
+  // The actual labels can arrive from iPhone as one continuous string,
+  // without visible # separators. Parse by the field identifiers themselves.
+  const clean=text.replace(/[\x00-\x1F\x7F]/g,'#').replace(/#+/g,'#');
   const out={raw:text};
 
-  parts.forEach((part,index)=>{
-    // Some labels/readers omit the K prefix and return the internal ID first.
-    if(index===0 && /^\d{4,}$/.test(part)) out.internalId=part;
-    else if(part.startsWith('9D')) out.dateCode=part.slice(2);
-    else if(part.startsWith('1T')) out.lot=part.slice(2);
-    else if(part.startsWith('1V')) out.manufacturer=part.slice(2);
-    else if(part.startsWith('1P')) out.partNumber2=part.slice(2);
-    else if(part.startsWith('K')) out.internalId=part.slice(1);
-    else if(part.startsWith('P')) out.partNumber=part.slice(1);
-    else if(part.startsWith('Q')) out.quantity=part.slice(1);
-  });
+  // Internal ID is the leading value before the first P field.
+  const firstP=clean.search(/(?:^|#)P(?!1P)/);
+  if(firstP>=0){
+    const prefix=clean.slice(0,firstP).replace(/^#+/,'').trim();
+    if(prefix) out.internalId=prefix;
+  } else {
+    const m=clean.match(/^(\d{4,})/);
+    if(m) out.internalId=m[1];
+  }
 
+  // Parse the primary fields by their identifiers, even when separators are missing.
+  const pMatch=clean.match(/(?:^|#)P(?!1P)(.*?)(?=Q|9D|1T|1V|1P|$)/);
+  const qMatch=clean.match(/Q(.*?)(?=9D|1T|1V|1P|$)/);
+  const dMatch=clean.match(/9D(.*?)(?=1T|1V|1P|$)/);
+  const tMatch=clean.match(/1T(.*?)(?=1V|1P|$)/);
+  const vMatch=clean.match(/1V(.*?)(?=1P|$)/);
+  const p1Match=clean.match(/1P(.*)$/);
+
+  if(pMatch) out.partNumber=pMatch[1].replace(/^#+/,'').trim();
+  if(qMatch) out.quantity=qMatch[1].replace(/^#+/,'').trim();
+  if(dMatch) out.dateCode=dMatch[1].replace(/^#+/,'').trim();
+  if(tMatch) out.lot=tMatch[1].replace(/^#+/,'').trim();
+  if(vMatch) out.manufacturer=vMatch[1].replace(/^#+/,'').trim();
+  if(p1Match) out.partNumber2=p1Match[1].replace(/^#+/,'').trim();
+
+  // If the primary P field was not detected, use the 1P field.
   out.partNumber=out.partNumber||out.partNumber2||'';
-  if(out.quantity!==undefined && !/^\d+(?:\.\d+)?$/.test(out.quantity))
+
+  if(out.quantity!==undefined && out.quantity!=='' && !/^\d+(?:\.\d+)?$/.test(out.quantity))
     throw Error('Quantity field Q is not numeric.');
 
   if(!out.internalId && !out.partNumber)
