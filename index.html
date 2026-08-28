@@ -47,7 +47,12 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
   <label>QR value (manual fallback)
     <textarea id="raw" rows="3" placeholder="K108575#P1021-0150#Q305#9D2329#1T2329#1VYAGEO#1P1021-0150"></textarea>
   </label>
-  <button id="read" class="primary">Read QR Data</button>
+  <label style="display:block;margin-top:12px">USB Scanner
+  <input id="usbScan" type="text" autocomplete="off" autocapitalize="off"
+         spellcheck="false" placeholder="Scan with USB scanner">
+</label>
+<p id="usbMsg" class="muted">Click the box, then scan a QR code.</p>
+<button id="read" class="primary">Read QR Data</button>
 </section>
 
 <section id="details" class="card hidden">
@@ -398,6 +403,47 @@ $('updateRecord').onclick=()=>{
   r.manufacturer=$('editManufacturer').value.trim();r.location=loc;r.notes=$('editNotes').value.trim();
   r.editedAt=new Date().toLocaleString();saveState();$('editCard').classList.add('hidden');
 };
+
+// USB handheld scanner support.
+// Most USB scanners act as a keyboard and send the scanned text followed by Enter.
+function processUsbScan(value){
+  const raw=String(value||'').trim();
+  if(!raw)return;
+
+  $('raw').value=raw;
+
+  try{
+    const parsed=parseQR(raw);
+    show(parsed);
+    $('usbMsg').style.color='green';
+    $('usbMsg').textContent='✓ Scan received. Enter Location and press Save Inventory.';
+    $('cameraMsg').textContent='USB scanner read successfully.';
+  }catch(err){
+    $('usbMsg').style.color='crimson';
+    $('usbMsg').textContent='Scan received, but it could not be parsed: '+err.message;
+  }
+
+  $('usbScan').value='';
+}
+
+$('usbScan').addEventListener('keydown',function(e){
+  if(e.key==='Enter'){
+    e.preventDefault();
+    processUsbScan(this.value);
+  }
+});
+
+// Also support scanners configured without an Enter suffix.
+let usbAutoTimer=null;
+$('usbScan').addEventListener('input',function(){
+  clearTimeout(usbAutoTimer);
+  const value=this.value;
+  usbAutoTimer=setTimeout(()=>{
+    if(value.trim().length>3 && /(?:K|P|Q|9D|1T|1V|1P)/.test(value)){
+      processUsbScan(value);
+    }
+  },300);
+});
 // Purchase Order
 function renderPO(){
   $('poNumber').value=currentPO;
