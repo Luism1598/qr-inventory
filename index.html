@@ -51,7 +51,10 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
   <input id="usbScan" type="text" autocomplete="off" autocapitalize="off"
          spellcheck="false" placeholder="Scan with USB scanner">
 </label>
-<p id="usbMsg" class="muted">Click the box, then scan a QR code.</p>
+<div class="actions" style="margin-top:8px">
+  <button id="processUsb" class="primary" type="button">Process USB Scan</button>
+</div>
+<p id="usbMsg" class="muted">Click the box, scan a QR code, or press Process USB Scan.</p>
 <button id="read" class="primary">Read QR Data</button>
 </section>
 
@@ -305,13 +308,14 @@ async function startCamera(){
   }
 }
 $('read').onclick=()=>{
+  const usb=$('usbScan')?.value.trim();
+  const value=usb||$('raw').value;
   try{
-    const parsed=parseQR($('raw').value);
-    show(parsed);
-    $('cameraMsg').textContent='QR data recognized. Enter the location and save.';
-  }catch(e){
-    $('cameraMsg').textContent=e.message;
-  }
+    show(parseQR(value));
+    $('cameraMsg').textContent='QR data recognized.';
+    $('usbMsg').textContent=usb?'USB scan processed.':'Manual QR data recognized.';
+    if(usb)$('usbScan').value='';
+  }catch(e){$('cameraMsg').textContent=e.message}
 };
 $('start').onclick=startCamera;
 $('stop').onclick=stopCamera;
@@ -417,15 +421,13 @@ $('updateRecord').onclick=()=>{
 };
 
 // USB handheld scanner support
-let usbStableValue='';
-let usbStableAt=0;
-let usbLastProcessed='';
-
 function processUsbScan(value){
   const raw=String(value||'').trim();
-  if(!raw || raw===usbLastProcessed)return;
-  usbLastProcessed=raw;
-
+  if(!raw){
+    $('usbMsg').style.color='crimson';
+    $('usbMsg').textContent='No USB scan data found. Scan a QR code first.';
+    return;
+  }
   $('raw').value=raw;
   try{
     const parsed=parseQR(raw);
@@ -433,63 +435,49 @@ function processUsbScan(value){
     $('usbMsg').style.color='green';
     $('usbMsg').textContent='✓ USB scan read successfully. Enter Location and press Save Inventory.';
     $('cameraMsg').textContent='USB scanner read successfully.';
+    $('usbScan').value='';
   }catch(err){
     $('usbMsg').style.color='crimson';
     $('usbMsg').textContent='QR received, but it could not be parsed: '+err.message;
   }
-  $('usbScan').value='';
-  usbStableValue='';
-  usbStableAt=0;
 }
 
-function usbCheck(){
-  const field=document.getElementById('usbScan');
-  if(!field)return;
-  const value=field.value.trim();
-  if(!value){
-    usbStableValue=''; usbStableAt=0; return;
-  }
-  if(value!==usbStableValue){
-    usbStableValue=value;
-    usbStableAt=Date.now();
-    return;
-  }
-  // Scanner has stopped typing; process the completed value.
-  if(Date.now()-usbStableAt>=700){
-    processUsbScan(value);
-  }
+function processUsbField(){
+  const field=$('usbScan');
+  if(field) processUsbScan(field.value);
 }
 
+$('processUsb').addEventListener('click',processUsbField);
 $('usbScan').addEventListener('keydown',function(e){
   if(e.key==='Enter'){
     e.preventDefault();
-    processUsbScan(this.value);
+    processUsbField();
   }
 });
-$('usbScan').addEventListener('input',function(){
-  usbStableValue=this.value.trim();
-  usbStableAt=Date.now();
+$('usbScan').addEventListener('change',processUsbField);
+$('usbScan').addEventListener('blur',function(){
+  if(this.value.trim()) setTimeout(processUsbField,150);
 });
-setInterval(usbCheck,100);
 
-// Global keyboard fallback for scanners that type into the page but somehow
-// don't update the focused field consistently.
-let scannerKeys='';
-let scannerLastKey=0;
-document.addEventListener('keydown',function(e){
-  if(e.key==='Enter' && scannerKeys.length>3){
-    const now=Date.now();
-    if(now-scannerLastKey<1500) processUsbScan(scannerKeys);
-    scannerKeys='';
+// Automatic detection for scanners that do not send Enter.
+let usbPrevious='';
+let usbChangedAt=0;
+setInterval(()=>{
+  const field=$('usbScan');
+  if(!field)return;
+  const value=field.value.trim();
+  if(!value){usbPrevious='';usbChangedAt=0;return;}
+  if(value!==usbPrevious){
+    usbPrevious=value;
+    usbChangedAt=Date.now();
     return;
   }
-  if(e.key.length===1){
-    const now=Date.now();
-    if(now-scannerLastKey>250) scannerKeys='';
-    scannerKeys+=e.key;
-    scannerLastKey=now;
+  if(Date.now()-usbChangedAt>1000){
+    processUsbField();
+    usbPrevious='';
+    usbChangedAt=0;
   }
-});
+},100);
 
 // Purchase Order
 function renderPO(){
