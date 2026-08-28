@@ -142,39 +142,53 @@ function parseQR(raw){
   const text=String(raw||'').trim();
   if(!text) throw Error('No QR data found.');
 
-  // The iPhone scanner is returning the GS1 group-separator character
-  // (which can display as a small square in the text box). We do not rely
-  // on that separator; instead, we locate the field identifiers directly.
   const out={raw:text};
 
-  // Your real label format:
-  // K110106 [separator] P1044-LP2985-3.3V [separator] Q263
-  // [separator] 9D2324 [separator] 1T3115196EM3 [separator] 1V
-  // [separator] 1P...
-  const kMatch=text.match(/K(.*?)(?=P|Q|9D|1T|1V|1P|$)/);
-  const pMatch=text.match(/(?:^|[^1])P(.*?)(?=Q|9D|1T|1V|1P|$)/);
-  const qMatch=text.match(/Q([0-9]+(?:\.[0-9]+)?)(?=[^0-9]|$)/);
-  const dMatch=text.match(/9D(.*?)(?=1T|1V|1P|$)/);
-  const tMatch=text.match(/1T(.*?)(?=1V|1P|$)/);
-  const vMatch=text.match(/1V(.*?)(?=1P|$)/);
-  const p1Match=text.match(/1P(.*)$/);
+  // Prefer the explicit # / GS separators used by the warehouse labels.
+  const parts=text.split(/[#\x1D]+/).map(x=>x.trim());
+  for(let i=0;i<parts.length;i++){
+    const part=parts[i];
+    if(/^K/i.test(part)) out.internalId=part.slice(1);
+    else if(/^P(?!1P)/i.test(part)) out.partNumber=part.slice(1);
+    else if(/^Q/i.test(part)) out.quantity=part.slice(1);
+    else if(/^9D/i.test(part)) out.dateCode=part.slice(2);
+    else if(/^1T/i.test(part)) out.lot=part.slice(2);
+    else if(/^1V/i.test(part)) out.manufacturer=part.slice(2);
+    else if(/^1P/i.test(part)) out.partNumber2=part.slice(2);
+  }
 
-  if(kMatch) out.internalId=kMatch[1].trim();
-  if(pMatch) out.partNumber=pMatch[1].trim();
-  if(qMatch) out.quantity=qMatch[1].trim();
-  if(dMatch) out.dateCode=dMatch[1].trim();
-  if(tMatch) out.lot=tMatch[1].trim();
-  if(vMatch) out.manufacturer=vMatch[1].trim();
-  if(p1Match) out.partNumber2=p1Match[1].trim();
+  // Fallback for scanners that remove separators.
+  if(!out.internalId){
+    const k=text.match(/^K(.*?)(?=P|Q|9D|1T|1V|1P|$)/i);
+    if(k)out.internalId=k[1].trim();
+  }
+  if(!out.partNumber){
+    const p=text.match(/(?:^|[^1])P(.*?)(?=Q|9D|1T|1V|1P|$)/i);
+    if(p)out.partNumber=p[1].trim();
+  }
+  if(out.quantity===undefined){
+    const q=text.match(/Q([0-9]+(?:\.[0-9]+)?)/i);
+    if(q)out.quantity=q[1];
+  }
+  if(!out.dateCode){
+    const d=text.match(/9D(.*?)(?=1T|1V|1P|$)/i);
+    if(d)out.dateCode=d[1].trim();
+  }
+  if(!out.lot){
+    const t=text.match(/1T(.*?)(?=1V|1P|$)/i);
+    if(t)out.lot=t[1].trim();
+  }
+  if(!out.manufacturer){
+    const v=text.match(/1V(.*?)(?=1P|$)/i);
+    if(v)out.manufacturer=v[1].trim();
+  }
+  if(!out.partNumber)out.partNumber=out.partNumber2||'';
 
-  out.partNumber=out.partNumber||out.partNumber2||'';
-
-  // Quantity is optional for parsing; if present, it must be numeric.
-  if(out.quantity!==undefined && !/^\d+(?:\.\d+)?$/.test(out.quantity))
-    throw Error('Could not read the quantity after Q. Please rescan the QR.');
+  if(out.quantity!==undefined && out.quantity!=='' && !/^\d+(?:\.\d+)?$/.test(out.quantity))
+    throw Error('Could not read the quantity after Q.');
 
   if(!out.internalId && !out.partNumber)
-    throw Error('QR format not recognized. Please rescan the label.');
+    throw Error('QR format not recognized.');
 
   return out;
 }
@@ -405,13 +419,17 @@ $('updateRecord').onclick=()=>{
 };
 
 // USB handheld scanner support
-let usbAutoTimer=null;
-let usbKeyBuffer='';
-let usbLastKey=0;
+// Some USB scanners inject text directly into the focused input. A small
+// watcher catches that completed value even when keyboard/input events are
+// inconsistent, then runs the same parser used by the camera scanner.
+let usbLastValue='';
+let usbProcessing=false;
 
 function processUsbScan(value){
   const raw=String(value||'').trim();
-  if(!raw)return;
+  if(!raw || usbProcessing)return;
+  usbProcessing=true;
+
   $('raw').value=raw;
   try{
     const parsed=parseQR(raw);
@@ -419,52 +437,56 @@ function processUsbScan(value){
     $('usbMsg').style.color='green';
     $('usbMsg').textContent='✓ USB scan read successfully. Enter Location and press Save Inventory.';
     $('cameraMsg').textContent='USB scanner read successfully.';
+    $('usbScan').value='';
+    usbLastValue='';
   }catch(err){
     $('usbMsg').style.color='crimson';
     $('usbMsg').textContent='Scan received, but it could not be parsed: '+err.message;
   }
-  $('usbScan').value='';
-  usbKeyBuffer='';
+  usbProcessing=false;
 }
 
 $('usbScan').addEventListener('keydown',function(e){
   if(e.key==='Enter'){
     e.preventDefault();
-    clearTimeout(usbAutoTimer);
     processUsbScan(this.value);
   }
 });
 
 $('usbScan').addEventListener('input',function(){
-  clearTimeout(usbAutoTimer);
-  const value=this.value;
-  usbAutoTimer=setTimeout(()=>{
-    if(value.trim().length>=3) processUsbScan(value);
-  },800);
+  usbLastValue=this.value;
 });
 
-// Also recognize a keyboard-style scanner even if the USB field is not focused.
-document.addEventListener('keydown',function(e){
-  const now=Date.now();
-  const target=e.target;
-  const editing=target && ['INPUT','TEXTAREA','SELECT'].includes(target.tagName);
-  if(now-usbLastKey>700) usbKeyBuffer='';
-  usbLastKey=now;
+// Catch scanners that type without producing the expected input event.
+setInterval(()=>{
+  const field=$('usbScan');
+  if(!field || usbProcessing)return;
+  const value=field.value;
+  if(value && value!==usbLastValue){
+    usbLastValue=value;
+  }
+  // A typical QR scan is much longer than a normal word. Process after the
+  // value has remained unchanged briefly.
+},250);
 
-  if(e.key==='Enter' && usbKeyBuffer.length>=3){
-    e.preventDefault();
-    processUsbScan(usbKeyBuffer);
+let usbStableValue='';
+let usbStableSince=0;
+setInterval(()=>{
+  const field=$('usbScan');
+  if(!field || usbProcessing)return;
+  const value=field.value.trim();
+  if(!value){usbStableValue='';usbStableSince=0;return;}
+  if(value!==usbStableValue){
+    usbStableValue=value;
+    usbStableSince=Date.now();
     return;
   }
-  if(e.key.length===1 && !editing){
-    usbKeyBuffer+=e.key;
-    clearTimeout(usbAutoTimer);
-    usbAutoTimer=setTimeout(()=>{
-      if(usbKeyBuffer.length>=3) processUsbScan(usbKeyBuffer);
-      usbKeyBuffer='';
-    },800);
+  if(value.length>=5 && Date.now()-usbStableSince>=500){
+    processUsbScan(value);
+    usbStableValue='';
+    usbStableSince=0;
   }
-});
+},150);
 
 // Purchase Order
 function renderPO(){
