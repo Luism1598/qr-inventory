@@ -404,46 +404,68 @@ $('updateRecord').onclick=()=>{
   r.editedAt=new Date().toLocaleString();saveState();$('editCard').classList.add('hidden');
 };
 
-// USB handheld scanner support.
-// Most USB scanners act as a keyboard and send the scanned text followed by Enter.
+// USB handheld scanner support
+let usbAutoTimer=null;
+let usbKeyBuffer='';
+let usbLastKey=0;
+
 function processUsbScan(value){
   const raw=String(value||'').trim();
   if(!raw)return;
-
   $('raw').value=raw;
-
   try{
     const parsed=parseQR(raw);
     show(parsed);
     $('usbMsg').style.color='green';
-    $('usbMsg').textContent='✓ Scan received. Enter Location and press Save Inventory.';
+    $('usbMsg').textContent='✓ USB scan read successfully. Enter Location and press Save Inventory.';
     $('cameraMsg').textContent='USB scanner read successfully.';
   }catch(err){
     $('usbMsg').style.color='crimson';
     $('usbMsg').textContent='Scan received, but it could not be parsed: '+err.message;
   }
-
   $('usbScan').value='';
+  usbKeyBuffer='';
 }
 
 $('usbScan').addEventListener('keydown',function(e){
   if(e.key==='Enter'){
     e.preventDefault();
+    clearTimeout(usbAutoTimer);
     processUsbScan(this.value);
   }
 });
 
-// Also support scanners configured without an Enter suffix.
-let usbAutoTimer=null;
 $('usbScan').addEventListener('input',function(){
   clearTimeout(usbAutoTimer);
   const value=this.value;
   usbAutoTimer=setTimeout(()=>{
-    if(value.trim().length>3 && /(?:K|P|Q|9D|1T|1V|1P)/.test(value)){
-      processUsbScan(value);
-    }
-  },300);
+    if(value.trim().length>=3) processUsbScan(value);
+  },800);
 });
+
+// Also recognize a keyboard-style scanner even if the USB field is not focused.
+document.addEventListener('keydown',function(e){
+  const now=Date.now();
+  const target=e.target;
+  const editing=target && ['INPUT','TEXTAREA','SELECT'].includes(target.tagName);
+  if(now-usbLastKey>700) usbKeyBuffer='';
+  usbLastKey=now;
+
+  if(e.key==='Enter' && usbKeyBuffer.length>=3){
+    e.preventDefault();
+    processUsbScan(usbKeyBuffer);
+    return;
+  }
+  if(e.key.length===1 && !editing){
+    usbKeyBuffer+=e.key;
+    clearTimeout(usbAutoTimer);
+    usbAutoTimer=setTimeout(()=>{
+      if(usbKeyBuffer.length>=3) processUsbScan(usbKeyBuffer);
+      usbKeyBuffer='';
+    },800);
+  }
+});
+
 // Purchase Order
 function renderPO(){
   $('poNumber').value=currentPO;
